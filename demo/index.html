@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Raumkarte Demo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+<style>
+  body { margin: 0; background: #0B0E13; color: #E9EDF2; font-family: Inter, system-ui, sans-serif; }
+  main { max-width: 480px; margin: 0 auto; padding: 24px 16px 40px; display: flex; flex-direction: column; gap: 10px; }
+  .floor { padding: 8px 4px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .floor small { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #9AA4B2; }
+  .floor h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+  .note { font-size: 12px; color: #9AA4B2; padding: 12px 4px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<main>
+  <div class="floor"><small>Etage · Demo ohne Home Assistant</small><h1>Erdgeschoss</h1></div>
+  <raumkarte-card id="wz"></raumkarte-card>
+  <raumkarte-card id="ku"></raumkarte-card>
+  <raumkarte-card id="bad"></raumkarte-card>
+  <p class="note">Simulierte Daten. Garagentor, Lichtgruppe und Diagnose-Sensor im Wohnzimmer werden absichtlich ignoriert. Halten auf ein Licht-Icon zeigt ein Details-Ereignis in der Konsole.</p>
+</main>
+
+<script>
+  // Platzhalter für <ha-icon>: MDI-Webfont im eigenen Shadow Root.
+  customElements.define("ha-icon", class extends HTMLElement {
+    static get observedAttributes() { return ["icon"]; }
+    connectedCallback() { this._r(); }
+    attributeChangedCallback() { this._r(); }
+    _r() {
+      if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+      const name = (this.getAttribute("icon") || "").replace("mdi:", "");
+      this.shadowRoot.innerHTML = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+        <style>:host{display:inline-flex;align-items:center;justify-content:center;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px)}
+        i{font-size:var(--mdc-icon-size,24px);line-height:1}</style><i class="mdi mdi-${name}"></i>`;
+    }
+  });
+
+  const L = (name, on, bri, area, extra = {}) => ({ state: on ? "on" : "off", attributes: { friendly_name: name, brightness: on ? Math.round(bri * 2.55) : null, supported_color_modes: ["brightness"], ...extra }, _area: area });
+  const C = (name, pos, tilt, area, dc = "blind") => ({ state: pos === 0 ? "closed" : "open", attributes: { friendly_name: name, current_position: pos, device_class: dc, supported_features: tilt == null ? 15 : 255, ...(tilt == null ? {} : { current_tilt_position: tilt }) }, _area: area });
+  const S = (name, v, dc, unit, area, cat) => ({ state: String(v), attributes: { friendly_name: name, device_class: dc, unit_of_measurement: unit }, _area: area, _cat: cat });
+
+  const raw = {
+    "light.wohnzimmer_decke": L("Wohnzimmer Decke", false, 100, "wohnzimmer"),
+    "light.wohnzimmer_stehlampe": L("Wohnzimmer Stehlampe", true, 70, "wohnzimmer"),
+    "light.wohnzimmer_leselicht": L("Wohnzimmer Leselicht", true, 40, "wohnzimmer"),
+    "light.wohnzimmer_led_band": L("Wohnzimmer LED-Band", false, 100, "wohnzimmer"),
+    "light.wohnzimmer_alle": L("Wohnzimmer alle", true, 55, "wohnzimmer", { entity_id: ["light.wohnzimmer_decke"] }),
+    "cover.raffstore_sued": C("Raffstore Süd", 35, 50, "wohnzimmer"),
+    "cover.raffstore_west": C("Raffstore West", 100, 100, "wohnzimmer"),
+    "cover.rollo_terrasse": C("Rollo Terrasse", 0, null, "wohnzimmer", "shutter"),
+    "cover.garagentor": C("Garagentor", 0, null, "wohnzimmer", "garage"),
+    "sensor.wohnzimmer_temperatur": S("Wohnzimmer Temperatur", 21.4, "temperature", "°C", "wohnzimmer"),
+    "sensor.wohnzimmer_luftfeuchtigkeit": S("Wohnzimmer Luftfeuchtigkeit", 48, "humidity", "%", "wohnzimmer"),
+    "sensor.thermostat_chip_temp": S("Thermostat Chiptemperatur", 38, "temperature", "°C", "wohnzimmer", "diagnostic"),
+    "light.kueche_spots": L("Küche Spots", true, 100, "kueche"),
+    "light.kueche_kochinsel": L("Küche Kochinsel", false, 100, "kueche"),
+    "light.kueche_unterbau": { ...L("Küche Unterbau", false, 100, "kueche"), attributes: { friendly_name: "Küche Unterbau", supported_color_modes: ["onoff"] } },
+    "cover.rollo_kueche_ost": C("Küche Rollo Ost", 100, null, "kueche", "shutter"),
+    "sensor.kueche_temperatur": S("Küche Temperatur", 22.1, "temperature", "°C", "kueche"),
+    "sensor.kueche_luftfeuchtigkeit": S("Küche Luftfeuchtigkeit", 55, "humidity", "%", "kueche"),
+    "light.bad_spiegel": L("Bad Spiegel", false, 100, "bad"),
+    "light.bad_decke": L("Bad Decke", false, 100, "bad"),
+    "sensor.bad_temperatur": S("Bad Temperatur", 23.8, "temperature", "°C", "bad"),
+    "sensor.bad_luftfeuchtigkeit": S("Bad Luftfeuchtigkeit", 68, "humidity", "%", "bad"),
+  };
+
+  let states = {};
+  const entities = {};
+  for (const [id, v] of Object.entries(raw)) {
+    states[id] = { entity_id: id, state: v.state, attributes: v.attributes };
+    entities[id] = { entity_id: id, area_id: v._area, device_id: null, hidden: false, entity_category: v._cat || null };
+  }
+  const areas = {
+    wohnzimmer: { area_id: "wohnzimmer", name: "Wohnzimmer", icon: "mdi:sofa" },
+    kueche: { area_id: "kueche", name: "Küche", icon: "mdi:pot-steam" },
+    bad: { area_id: "bad", name: "Bad", icon: "mdi:bathtub" },
+  };
+
+  const cards = [...document.querySelectorAll("raumkarte-card")];
+  const push = () => { const hass = { states, entities, areas, devices: {}, callService }; cards.forEach((c) => (c.hass = hass)); };
+
+  function patch(id, fn) {
+    const s = states[id];
+    const n = { ...s, attributes: { ...s.attributes } };
+    fn(n);
+    states = { ...states, [id]: n };
+  }
+
+  function callService(domain, service, data) {
+    console.log("callService", domain, service, JSON.stringify(data));
+    const ids = [].concat(data.entity_id);
+    for (const id of ids) {
+      if (domain === "light") {
+        patch(id, (s) => {
+          const on = service === "toggle" ? s.state !== "on" : service === "turn_on";
+          s.state = on ? "on" : "off";
+          if (on && data.brightness_pct && s.attributes.supported_color_modes.includes("brightness")) s.attributes.brightness = Math.round(data.brightness_pct * 2.55);
+          if (on && s.attributes.brightness == null && s.attributes.supported_color_modes.includes("brightness")) s.attributes.brightness = 255;
+        });
+      }
+      if (domain === "cover") {
+        patch(id, (s) => {
+          if (service === "open_cover") s.attributes.current_position = 100;
+          if (service === "close_cover") s.attributes.current_position = 0;
+          if (service === "set_cover_tilt_position") s.attributes.current_tilt_position = data.tilt_position;
+          s.state = s.attributes.current_position === 0 ? "closed" : "open";
+        });
+      }
+    }
+    push();
+    return Promise.resolve();
+  }
+
+  document.addEventListener("hass-more-info", (e) => console.log("more-info", e.detail.entityId));
+</script>
+<script src="../raumkarte-card.js"></script>
+<script>
+  document.getElementById("wz").setConfig({ type: "custom:raumkarte-card", area: "wohnzimmer" });
+  document.getElementById("ku").setConfig({ type: "custom:raumkarte-card", area: "kueche" });
+  document.getElementById("bad").setConfig({ type: "custom:raumkarte-card", area: "bad" });
+  push();
+</script>
+</body>
+</html>
