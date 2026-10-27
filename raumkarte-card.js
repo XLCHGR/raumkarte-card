@@ -4,7 +4,7 @@
  * Bereich wählen → Lichter, bis zu 3 Rollos/Raffstores, Temperatur und Feuchte werden automatisch gefunden.
  */
 
-const RK_VERSION = "1.0.1";
+const RK_VERSION = "1.0.2";
 
 const COVER_SKIP = ["garage", "gate", "door", "damper", "window"];
 const TILT_POSITION = 128;
@@ -98,7 +98,7 @@ const STYLES = `
 
   /* Pop-up */
   .overlay { position: fixed; inset: 0; z-index: 6; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; }
-  .backdrop { position: absolute; inset: 0; background: rgba(4,6,10,0.62); animation: fade .18s ease; }
+  .backdrop { position: absolute; inset: 0; touch-action: none; background: rgba(4,6,10,0.62); animation: fade .18s ease; }
   .sheet { position: relative; width: 100%; max-width: 520px; max-height: 92vh; overflow-y: auto; overscroll-behavior: contain;
     display: flex; flex-direction: column; gap: 14px; padding: 10px 16px calc(28px + env(safe-area-inset-bottom));
     border-radius: 28px 28px 0 0; background: var(--rk-sheet); border-top: 1px solid rgba(255,255,255,0.10);
@@ -152,6 +152,39 @@ const STYLES = `
   .tilt button { height: 36px; padding: 0 14px; border-radius: 999px; background: var(--rk-btn); font-size: 13px; font-weight: 600; display: flex; align-items: center; }
   .tilt button.active { background: rgba(90,176,255,0.16); color: var(--rk-sky-text); }
 `;
+
+// Bestehende Knoten nur anpassen statt neu zu erzeugen: kein Flackern der Icons,
+// keine neu startenden Animationen, Scrollposition im Pop-up bleibt.
+function morphChildren(parent, next) {
+  const cur = [...parent.childNodes];
+  const nxt = [...next.childNodes];
+  nxt.forEach((nb, i) => {
+    const na = cur[i];
+    if (!na) parent.appendChild(nb);
+    else morphNode(parent, na, nb);
+  });
+  for (let i = nxt.length; i < cur.length; i++) cur[i].remove();
+}
+
+function morphNode(parent, a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) {
+    parent.replaceChild(b, a);
+    return;
+  }
+  if (a.nodeType !== Node.ELEMENT_NODE) {
+    if (a.nodeValue !== b.nodeValue) a.nodeValue = b.nodeValue;
+    return;
+  }
+  for (const { name } of [...a.attributes]) if (!b.hasAttribute(name)) a.removeAttribute(name);
+  for (const { name, value } of [...b.attributes]) if (a.getAttribute(name) !== value) a.setAttribute(name, value);
+  morphChildren(a, b);
+}
+
+function paint(root, html) {
+  const t = document.createElement("template");
+  t.innerHTML = html;
+  morphChildren(root, t.content);
+}
 
 class RaumkarteCard extends HTMLElement {
   static getConfigElement() {
@@ -340,7 +373,7 @@ class RaumkarteCard extends HTMLElement {
   _render() {
     const m = this._model;
     if (!this._config.area && !m.lights.length && !m.covers.length) {
-      this._root.innerHTML = `<style>${STYLES}</style><div class="card"><div class="empty">Bitte im Editor einen Bereich wählen.</div></div>`;
+      paint(this._root, `<style>${STYLES}</style><div class="card"><div class="empty">Bitte im Editor einen Bereich wählen.</div></div>`);
       return;
     }
     const anyOn = m.lights.some((e) => this._isOn(e));
@@ -373,7 +406,7 @@ class RaumkarteCard extends HTMLElement {
         </div>`
       : "";
 
-    this._root.innerHTML = `<style>${STYLES}</style>
+    paint(this._root, `<style>${STYLES}</style>
       <div class="card">
         <button class="head" data-act="open" aria-label="${esc(m.name)} öffnen">
           <span class="room-icon ${anyOn ? "on" : ""}"><ha-icon icon="${esc(m.icon)}"></ha-icon></span>
@@ -382,7 +415,7 @@ class RaumkarteCard extends HTMLElement {
           <ha-icon class="chev" icon="${ICONS.chevron}"></ha-icon>
         </button>
         ${slider || blinds ? `<div class="actions">${slider}${blinds}</div>` : ""}
-      </div>`;
+      </div>`);
 
     if (this._open) this._renderPopup();
   }
@@ -445,7 +478,7 @@ class RaumkarteCard extends HTMLElement {
         </div>`;
     }).join("");
 
-    this._pop.innerHTML = `<style>${STYLES}</style>
+    paint(this._pop, `<style>${STYLES}</style>
       <div class="overlay">
         <button class="backdrop" data-act="close" aria-label="Schließen"></button>
         <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(m.name)}">
@@ -461,7 +494,7 @@ class RaumkarteCard extends HTMLElement {
             <div class="grid2">${lights}</div>` : ""}
           ${m.covers.length ? `<div class="section"><span class="t">Beschattung</span></div>${covers}` : ""}
         </div>
-      </div>`;
+      </div>`);
   }
 
   // ── Pop-up ──────────────────────────────────────────────────────────
@@ -476,7 +509,6 @@ class RaumkarteCard extends HTMLElement {
     history.pushState({ ...(history.state || {}), raumkarte: this._popId }, "");
     window.addEventListener("popstate", this._onPopState);
     window.addEventListener("keydown", this._onKey);
-    document.documentElement.style.overflow = "hidden";
     this._sig = "";
     this._update();
   }
@@ -486,7 +518,6 @@ class RaumkarteCard extends HTMLElement {
     this._open = false;
     window.removeEventListener("popstate", this._onPopState);
     window.removeEventListener("keydown", this._onKey);
-    document.documentElement.style.overflow = "";
     this._popHost?.remove();
     this._popHost = this._pop = null;
     if (!fromHistory && history.state?.raumkarte === this._popId) history.back();
