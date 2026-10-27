@@ -4,7 +4,7 @@
  * Bereich wählen → Lichter, bis zu 3 Rollos/Raffstores, Temperatur und Feuchte werden automatisch gefunden.
  */
 
-const RK_VERSION = "1.0.0";
+const RK_VERSION = "1.0.1";
 
 const COVER_SKIP = ["garage", "gate", "door", "damper", "window"];
 const TILT_POSITION = 128;
@@ -512,6 +512,9 @@ class RaumkarteCard extends HTMLElement {
       window.addEventListener("pointerup", release);
       window.addEventListener("pointercancel", release);
     }, true);
+    root.addEventListener("pointerdown", (e) => this._onTapStart(e));
+    root.addEventListener("pointerup", (e) => this._onTapEnd(e));
+    root.addEventListener("pointercancel", () => (this._tap = null));
     root.addEventListener("click", (e) => this._onClick(e));
     root.addEventListener("pointerdown", (e) => this._onPointerDown(e));
     root.addEventListener("keydown", (e) => this._onSliderKey(e));
@@ -525,19 +528,47 @@ class RaumkarteCard extends HTMLElement {
     this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId }, bubbles: true, composed: true }));
   }
 
+  // Tipps werden über pointerdown/pointerup erkannt statt über "click":
+  // In HA und der Companion-App kommt "click" nicht zuverlässig an
+  // (Touch, Neuzeichnen zwischen Down und Up).
+  _tapKey(el) {
+    const d = el.dataset;
+    return [d.act, d.tap, d.e, d.svc, d.v].join("|");
+  }
+
+  _tapTarget(ev) {
+    return ev.target.closest?.("[data-act]") || ev.target.closest?.("[data-tap]");
+  }
+
+  _onTapStart(ev) {
+    if (ev.button > 0) return;
+    const el = this._tapTarget(ev);
+    this._tap = el ? { key: this._tapKey(el), x: ev.clientX, y: ev.clientY } : null;
+  }
+
+  _onTapEnd(ev) {
+    const tap = this._tap;
+    this._tap = null;
+    if (!tap || this._dragging) return;
+    if (Math.hypot(ev.clientX - tap.x, ev.clientY - tap.y) > 12) return;
+    const el = this._tapTarget(ev);
+    if (!el || this._tapKey(el) !== tap.key) return;
+    ev.preventDefault();
+    this._activate(el);
+  }
+
   _onClick(ev) {
-    if (this._suppressClick) {
-      this._suppressClick = false;
-      ev.preventDefault();
+    // Nur Tastatur (Enter/Leertaste) – Zeigergeräte laufen über _onTapEnd.
+    if (ev.detail !== 0) return;
+    const el = this._tapTarget(ev);
+    if (el) this._activate(el);
+  }
+
+  _activate(el) {
+    if (el.dataset.tap && !el.dataset.act) {
+      this._call("light", "toggle", { entity_id: el.dataset.tap });
       return;
     }
-    const tapTile = ev.target.closest("[data-tap]");
-    const el = ev.target.closest("[data-act]");
-    if (!el && tapTile) {
-      this._call("light", "toggle", { entity_id: tapTile.dataset.tap });
-      return;
-    }
-    if (!el) return;
     const m = this._model;
     const e = el.dataset.e;
     switch (el.dataset.act) {
@@ -555,6 +586,7 @@ class RaumkarteCard extends HTMLElement {
       case "tilt": return this._call("cover", "set_cover_tilt_position", { entity_id: e, tilt_position: Number(el.dataset.v) });
     }
   }
+
 
   _setBrightness(target, pct) {
     const m = this._model;
@@ -592,7 +624,7 @@ class RaumkarteCard extends HTMLElement {
     if (holdEl) {
       const id = holdEl.dataset.hold;
       const timer = setTimeout(() => {
-        this._suppressClick = true;
+        this._tap = null;
         this._moreInfo(id);
       }, 500);
       const clear = () => {
