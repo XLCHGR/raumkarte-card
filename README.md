@@ -22,7 +22,7 @@ Keine weiteren HACS-Karten nötig.
 
 1. `raumkarte-card.js` nach `/config/www/raumkarte-card.js` kopieren (z. B. mit dem File-Editor- oder Samba-Add-on).
 2. Einstellungen → Dashboards → ⋮ → **Ressourcen** → *Ressource hinzufügen*
-   - URL: `/local/raumkarte-card.js?v=1.0.2`
+   - URL: `/local/raumkarte-card.js?v=1.0.3`
    - Typ: **JavaScript-Modul**
 3. App bzw. Browser neu laden.
 

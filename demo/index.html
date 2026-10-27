@@ -96,7 +96,7 @@
     for (const id of ids) {
       if (domain === "light") {
         patch(id, (s) => {
-          const on = service === "toggle" ? s.state !== "on" : service === "turn_on";
+          const on = service === "toggle" ? s.state !== "on" : service === "turn_on" && data.brightness_pct !== 0; // wie HA: 0 % = aus
           s.state = on ? "on" : "off";
           if (on && data.brightness_pct && s.attributes.supported_color_modes.includes("brightness")) s.attributes.brightness = Math.round(data.brightness_pct * 2.55);
           if (on && s.attributes.brightness == null && s.attributes.supported_color_modes.includes("brightness")) s.attributes.brightness = 255;

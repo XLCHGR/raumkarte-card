@@ -4,7 +4,7 @@
  * Bereich wählen → Lichter, bis zu 3 Rollos/Raffstores, Temperatur und Feuchte werden automatisch gefunden.
  */
 
-const RK_VERSION = "1.0.2";
+const RK_VERSION = "1.0.3";
 
 const COVER_SKIP = ["garage", "gate", "door", "damper", "window"];
 const TILT_POSITION = 128;
@@ -597,7 +597,9 @@ class RaumkarteCard extends HTMLElement {
 
   _activate(el) {
     if (el.dataset.tap && !el.dataset.act) {
-      this._call("light", "toggle", { entity_id: el.dataset.tap });
+      const id = el.dataset.tap;
+      if (this._isOn(id)) this._lightsOff([id]);
+      else this._call("light", "turn_on", { entity_id: id });
       return;
     }
     const m = this._model;
@@ -606,18 +608,27 @@ class RaumkarteCard extends HTMLElement {
       case "open": return this._openPopup();
       case "close": return this._closePopup();
       case "more": return this._moreInfo(e);
-      case "light-toggle": return this._call("light", "toggle", { entity_id: e });
+      case "light-toggle": return this._isOn(e) ? this._lightsOff([e]) : this._call("light", "turn_on", { entity_id: e });
       case "room-toggle": {
         const anyOn = m.lights.some((x) => this._isOn(x));
-        return this._call("light", anyOn ? "turn_off" : "turn_on", { entity_id: m.lights });
+        return anyOn ? this._lightsOff(m.lights) : this._call("light", "turn_on", { entity_id: m.lights });
       }
-      case "all-off": return this._call("light", "turn_off", { entity_id: m.lights });
+      case "all-off": return this._lightsOff(m.lights);
       case "covers": return this._call("cover", el.dataset.svc, { entity_id: m.covers });
       case "cover": return this._call("cover", el.dataset.svc, { entity_id: e });
       case "tilt": return this._call("cover", "set_cover_tilt_position", { entity_id: e, tilt_position: Number(el.dataset.v) });
     }
   }
 
+
+  // Ausschalten als "Helligkeit 0 %" – manche Dimmaktoren (z. B. KNX) mögen das lieber als turn_off.
+  // Nicht dimmbare Lichter bekommen weiterhin turn_off.
+  _lightsOff(ids) {
+    const dim = ids.filter((e) => this._dimmable(e));
+    const plain = ids.filter((e) => !this._dimmable(e));
+    if (dim.length) this._call("light", "turn_on", { entity_id: dim, brightness_pct: 0 });
+    if (plain.length) this._call("light", "turn_off", { entity_id: plain });
+  }
 
   _setBrightness(target, pct) {
     const m = this._model;
